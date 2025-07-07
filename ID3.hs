@@ -9,13 +9,17 @@ data ID3Header = ID3Header {
 } deriving (Show)
 
 parseID3Header :: Get ID3Header
-parseID3Header = do
-    _ <- getByteString 3
-    version <- getWord16le
-    flags <- getWord8
-    size <- getInthost
+parseID3Header = ID3Header <$ getByteString 3 <*> getWord16le <*> getWord8 <*> getInthost
+-- parseID3Header = undefined
 
-    return $ ID3Header version flags size
+-- parseID3Header :: Get ID3Header
+-- parseID3Header = do
+--     _ <- getByteString 3
+--     version <- getWord16le
+--     flags <- getWord8
+--     size <- getInthost
+
+--     return $ ID3Header version flags size
 
 main :: IO ()
 main = BS.readFile "TastyWaves.mp3" >>=
