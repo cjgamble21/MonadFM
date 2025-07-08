@@ -28,28 +28,18 @@ getMP3FrameHeader bs
         bitRate = fromIntegral $ extractBits bs 12 3
         sampleRate = fromIntegral $ extractBits bs 10 2
 
--- Try to read a 4-byte Word32 from a given ByteString slice
-tryReadWord32 :: B.ByteString -> Word32
-tryReadWord32 = runGet getWord32be
--- tryReadWord32 bs
---     | B.length bs < 4 = Nothing
---     | otherwise       = Just $ runGet getWord32be (B.take 4 bs)
-
-windows :: B.ByteString -> [B.ByteString]
-windows bs
-  | B.length bs < 4 = []
-  | otherwise       = bs : windows (B.drop 1 bs)
-
-mp3Seek :: B.ByteString -> Maybe MP3FrameHeader
-mp3Seek bs = listToMaybe
-  [ hdr
-  | chunk <- windows bs
---   , Just word <- [tryReadWord32 chunk]
-  , Just hdr  <- [getMP3FrameHeader $ tryReadWord32 bs]
-  ]
+mp3Seek :: B.ByteString -> Maybe (B.ByteString, MP3FrameHeader)
+mp3Seek bs
+  | B.length bs < 4 = Nothing
+  | otherwise =
+      let window = B.take 4 bs
+          frame = getMP3FrameHeader $ runGet getWord32le window
+       in case frame of
+            Just header -> Just (bs, header)
+            Nothing     -> mp3Seek (B.drop 1 bs)
 
 main :: IO ()
 main = do
     input <- B.readFile "./TastyWaves.mp3"
     let frame = mp3Seek input
-    print frame
+    print $ snd <$> frame
