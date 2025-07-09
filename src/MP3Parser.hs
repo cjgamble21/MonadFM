@@ -29,15 +29,18 @@ getMP3FrameHeader bs
     | syncWord /= 0x7FF = Nothing
     | mpegVersion /= 3 = Nothing -- Only supporting MPEG-1
     | layerVersion /= 1 = Nothing -- Only supporting Layer 3
-    | bitRate == 0 || bitRate == 15 = Nothing
+    | bitRateIndex == 0 || bitRateIndex == 15 = Nothing
+    | sampleRateIndex < 0 || sampleRateIndex > 2 = Nothing
     | framePadding > 1 = Nothing
     | otherwise = Just $ MP3FrameHeader bitRate sampleRate framePadding
     where
         syncWord = extractBits bs 21 11
         mpegVersion = extractBits bs 19 2
         layerVersion = extractBits bs 17 2
-        bitRate = bitRates !! (fromIntegral $ extractBits bs 12 4)
-        sampleRate = sampleRates !! (fromIntegral $ extractBits bs 10 2)
+        bitRateIndex = fromIntegral $ extractBits bs 12 4
+        bitRate = bitRates !! bitRateIndex
+        sampleRateIndex = fromIntegral $ extractBits bs 10 2
+        sampleRate = sampleRates !! sampleRateIndex
         framePadding = fromIntegral $ extractBits bs 9 1
 
 calculateFrameSize :: Num a =>  MP3FrameHeader -> a

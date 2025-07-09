@@ -12,5 +12,5 @@ parseID3Header :: Get ID3Header
 parseID3Header = ID3Header <$ getByteString 3 <*> getWord16le <*> getWord8 <*> getInthost
 
 main :: IO ()
-main = BS.readFile "TastyWaves.mp3" >>=
+main = BS.readFile "./1-second-of-silence.mp3" >>=
     print . runGet parseID3Header . BS.fromStrict
