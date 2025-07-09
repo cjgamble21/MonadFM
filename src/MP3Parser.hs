@@ -9,11 +9,20 @@ import Data.List (unfoldr)
 
 type MP3DataStream = B.ByteString
 
+data ChannelMode = Stereo | JointStereo | DualChannel | SingleChannel deriving (Show)
+
 data MP3FrameHeader = MP3FrameHeader {
     bitRate :: Int,
     sampleRate :: Int,
+    channelMode :: ChannelMode,
     padding :: Int
 } deriving (Show)
+
+getChannelMode :: Int -> ChannelMode
+getChannelMode 0 = Stereo
+getChannelMode 1 = JointStereo
+getChannelMode 2 = DualChannel
+getChannelMode _ = SingleChannel
 
 extractBits :: (Bits a, Num a) => a -> Int -> Int -> a
 extractBits value startIndex size = (value `shiftR` startIndex) .&. ((1 `shiftL` size) - 1)
@@ -32,7 +41,7 @@ getMP3FrameHeader bs
     | bitRateIndex == 0 || bitRateIndex == 15 = Nothing
     | sampleRateIndex < 0 || sampleRateIndex > 2 = Nothing
     | framePadding > 1 = Nothing
-    | otherwise = Just $ MP3FrameHeader bitRate sampleRate framePadding
+    | otherwise = Just $ MP3FrameHeader bitRate sampleRate channelMode framePadding
     where
         syncWord = extractBits bs 21 11
         mpegVersion = extractBits bs 19 2
@@ -42,6 +51,7 @@ getMP3FrameHeader bs
         sampleRateIndex = fromIntegral $ extractBits bs 10 2
         sampleRate = sampleRates !! sampleRateIndex
         framePadding = fromIntegral $ extractBits bs 9 1
+        channelMode = getChannelMode . fromIntegral $ extractBits bs 6 2
 
 calculateFrameSize :: Num a =>  MP3FrameHeader -> a
 calculateFrameSize frame =
