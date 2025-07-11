@@ -12,19 +12,29 @@ data MP3DataStream = MP3DataStream {
     reservoir :: !B.ByteString -- Used for frame data lookback
 } deriving (Show)
 
-data ChannelMode = Stereo | JointStereo | DualChannel | SingleChannel deriving (Show)
+data ChannelMode = Stereo | JointStereo | DualChannel | SingleChannel deriving (Show, Eq)
 
 data MP3FrameHeader = MP3FrameHeader {
     bitRate :: Int,
     sampleRate :: Int,
+    protection :: Bool,
     channelMode :: ChannelMode,
     padding :: Int
 } deriving (Show)
 
+data MP3SideInfo = MP3SideInfo {
+    dataOffset :: Int -- Offset for previous frame lookback
+} deriving (Show)
+
 data MP3Frame = MP3Frame {
     header :: MP3FrameHeader,
+    sideInfo :: MP3SideInfo,
     mp3Data :: MP3DataStream
 } deriving (Show)
+
+toBool :: Int -> Bool
+toBool 0 = False
+toBool _ = True
 
 getChannelMode :: Int -> ChannelMode
 getChannelMode 0 = Stereo
@@ -49,7 +59,7 @@ getMP3FrameHeader bs
     | bitRateIndex == 0 || bitRateIndex == 15 = Nothing
     | sampleRateIndex < 0 || sampleRateIndex > 2 = Nothing
     | framePadding > 1 = Nothing
-    | otherwise = Just $ MP3FrameHeader bitRate sampleRate channelMode framePadding
+    | otherwise = Just $ MP3FrameHeader bitRate sampleRate protectionOn channelMode framePadding
     where
         syncWord = extractBits bs 21 11
         mpegVersion = extractBits bs 19 2
@@ -60,6 +70,20 @@ getMP3FrameHeader bs
         sampleRate = sampleRates !! sampleRateIndex
         framePadding = fromIntegral $ extractBits bs 9 1
         channelMode = getChannelMode . fromIntegral $ extractBits bs 6 2
+        protectionOn = toBool . fromIntegral $  extractBits bs 16 1
+
+parseSideInfo :: B.ByteString -> MP3SideInfo
+parseSideInfo bs = 
+    let word = runGet getWord8 bs
+    in MP3SideInfo {
+        dataOffset = fromIntegral $ extractBits word 0 8
+    }
+
+calculateSideInfoSize :: MP3FrameHeader -> Int
+calculateSideInfoSize header
+    | channel == SingleChannel = 17
+    | otherwise = 32
+    where channel = channelMode header
 
 calculateFrameSize :: Num a =>  MP3FrameHeader -> a
 calculateFrameSize frame =
@@ -71,9 +95,27 @@ mp3Seek (MP3DataStream bs reservoir)
   | otherwise = 
     case maybeHeader of
         Just header -> 
-            let frameSize = calculateFrameSize header
-                frameData = B.take frameSize bs
-            in Just (MP3Frame header (MP3DataStream frameData B.empty), MP3DataStream (B.drop frameSize bs) B.empty)
+            let frameStart = if protection header
+                             then B.drop 6 bs
+                             else B.drop 4 bs
+                frameSize = calculateFrameSize header
+                frameDataBytes = B.take frameSize frameStart
+
+                sideInfoSize = fromIntegral $ calculateSideInfoSize header
+                sideInfoBytes = B.take sideInfoSize frameDataBytes
+                sideInfo = parseSideInfo sideInfoBytes
+                
+                mainDataOffset = (B.length reservoir) - (fromIntegral $ dataOffset sideInfo)
+                
+                fullMainData = (B.drop mainDataOffset reservoir) `B.append` frameDataBytes
+
+                newReservoir = B.take 511 $ B.append reservoir frameDataBytes
+                frame = MP3Frame header sideInfo (MP3DataStream fullMainData reservoir)
+                
+                restFrames = B.drop frameSize bs
+                newDataStream = MP3DataStream restFrames newReservoir
+
+            in Just (frame, newDataStream)
         Nothing -> mp3Seek $ MP3DataStream (B.drop 1 bs) B.empty
     where maybeHeader = getMP3FrameHeader $ runGet getWord32be (B.take 4 bs)
 
