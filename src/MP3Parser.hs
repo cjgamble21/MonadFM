@@ -6,6 +6,10 @@ import Data.Bits
 import Data.Word
 import Data.Maybe
 import Data.List (unfoldr)
+import Debug.Trace
+
+debugShow :: Show a => String -> a -> a
+debugShow label x = trace (label ++ ": " ++ show x) x
 
 data MP3DataStream = MP3DataStream {
     mainData :: B.ByteString,
@@ -46,7 +50,7 @@ extractBits :: (Bits a, Num a) => a -> Int -> Int -> a
 extractBits value startIndex size = (value `shiftR` startIndex) .&. ((1 `shiftL` size) - 1)
 
 bitRates :: [Int]
-bitRates = [0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256, 320, 0]
+bitRates = map (* 1000) [0, 32, 48, 56, 64, 80, 96, 112, 128, 144, 160, 176, 192, 224, 256, 320, 0]
 
 sampleRates :: [Int]
 sampleRates = [44100, 48000, 32000]
@@ -95,19 +99,26 @@ mp3Seek (MP3DataStream bs reservoir)
   | otherwise = 
     case maybeHeader of
         Just header -> 
-            let frameStart = if protection header
-                             then B.drop 6 bs
-                             else B.drop 4 bs
-                frameSize = calculateFrameSize header
-                frameDataBytes = B.take frameSize frameStart
+            let frameSize = calculateFrameSize header
+                fullFrameBytes = B.take frameSize bs
+                frameDataBytes = if protection header
+                             then B.drop 6 fullFrameBytes
+                             else B.drop 4 fullFrameBytes
 
                 sideInfoSize = fromIntegral $ calculateSideInfoSize header
                 sideInfoBytes = B.take sideInfoSize frameDataBytes
                 sideInfo = parseSideInfo sideInfoBytes
                 
-                mainDataOffset = (B.length reservoir) - (fromIntegral $ dataOffset sideInfo)
+                reservoirLength = B.length reservoir
+                mainDataOffset = reservoirLength - (fromIntegral $ dataOffset sideInfo)
+            
+                previousFrameData = if mainDataOffset > 0 
+                    then B.drop mainDataOffset reservoir
+                    else B.empty
                 
-                fullMainData = (B.drop mainDataOffset reservoir) `B.append` frameDataBytes
+                fullMainData = if B.length previousFrameData > 0
+                    then previousFrameData `B.append` frameDataBytes
+                    else frameDataBytes
 
                 newReservoir = B.take 511 $ B.append reservoir frameDataBytes
                 frame = MP3Frame header sideInfo (MP3DataStream fullMainData reservoir)
@@ -125,6 +136,6 @@ parseAllFrames = unfoldr mp3Seek
 
 main :: IO ()
 main = do
-    input <- B.readFile "./1-second-of-silence.mp3"
+    input <- B.readFile "./TastyWaves.mp3"
     let frame = parseAllFrames $ MP3DataStream input B.empty
     print $ frame
