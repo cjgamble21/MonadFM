@@ -7,7 +7,10 @@ import Data.Word
 import Data.Maybe
 import Data.List (unfoldr)
 
-type MP3DataStream = B.ByteString
+data MP3DataStream = MP3DataStream {
+    mainData :: B.ByteString,
+    reservoir :: !B.ByteString -- Used for frame data lookback
+} deriving (Show)
 
 data ChannelMode = Stereo | JointStereo | DualChannel | SingleChannel deriving (Show)
 
@@ -63,15 +66,15 @@ calculateFrameSize frame =
     fromIntegral $ 144 * (bitRate frame) `div` (sampleRate frame) + (padding frame)
 
 mp3Seek :: MP3DataStream -> Maybe (MP3Frame, MP3DataStream)
-mp3Seek bs
+mp3Seek (MP3DataStream bs reservoir)
   | B.length bs < 4 = Nothing
   | otherwise = 
     case maybeHeader of
         Just header -> 
             let frameSize = calculateFrameSize header
                 frameData = B.take frameSize bs
-            in Just (MP3Frame header frameData, B.drop frameSize bs)
-        Nothing -> mp3Seek (B.drop 1 bs)
+            in Just (MP3Frame header (MP3DataStream frameData B.empty), MP3DataStream (B.drop frameSize bs) B.empty)
+        Nothing -> mp3Seek $ MP3DataStream (B.drop 1 bs) B.empty
     where maybeHeader = getMP3FrameHeader $ runGet getWord32be (B.take 4 bs)
 
 
@@ -81,5 +84,5 @@ parseAllFrames = unfoldr mp3Seek
 main :: IO ()
 main = do
     input <- B.readFile "./1-second-of-silence.mp3"
-    let frame = parseAllFrames input
+    let frame = parseAllFrames $ MP3DataStream input B.empty
     print $ frame
