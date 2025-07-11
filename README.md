@@ -13,4 +13,4 @@ The first part of this step is to find the first valid MP3 frame header, then pa
 ![MP3 Frame Data](https://upload.wikimedia.org/wikipedia/commons/thumb/d/d0/MP3filestructure.svg/2010px-MP3filestructure.svg.png)
 
 This documentation has been incredibly helpful for me thus far:
-![MP3 Frame Header Docs](https://www.datavoyage.com/mpgscript/mpeghdr.htm)
+https://www.datavoyage.com/mpgscript/mpeghdr.htm
