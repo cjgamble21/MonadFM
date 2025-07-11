@@ -18,6 +18,11 @@ data MP3FrameHeader = MP3FrameHeader {
     padding :: Int
 } deriving (Show)
 
+data MP3Frame = MP3Frame {
+    header :: MP3FrameHeader,
+    mp3Data :: MP3DataStream
+} deriving (Show)
+
 getChannelMode :: Int -> ChannelMode
 getChannelMode 0 = Stereo
 getChannelMode 1 = JointStereo
@@ -57,21 +62,24 @@ calculateFrameSize :: Num a =>  MP3FrameHeader -> a
 calculateFrameSize frame =
     fromIntegral $ 144 * (bitRate frame) `div` (sampleRate frame) + (padding frame)
 
-mp3Seek :: MP3DataStream -> Maybe (MP3FrameHeader, MP3DataStream)
+mp3Seek :: MP3DataStream -> Maybe (MP3Frame, MP3DataStream)
 mp3Seek bs
   | B.length bs < 4 = Nothing
   | otherwise = 
-    case header of
-        Just frame -> Just (frame, B.drop (calculateFrameSize frame) bs)
+    case maybeHeader of
+        Just header -> 
+            let frameSize = calculateFrameSize header
+                frameData = B.take frameSize bs
+            in Just (MP3Frame header frameData, B.drop frameSize bs)
         Nothing -> mp3Seek (B.drop 1 bs)
-    where header = getMP3FrameHeader $ runGet getWord32be (B.take 4 bs)
+    where maybeHeader = getMP3FrameHeader $ runGet getWord32be (B.take 4 bs)
 
 
-parseAllFrames :: MP3DataStream -> [MP3FrameHeader]
+parseAllFrames :: MP3DataStream -> [MP3Frame]
 parseAllFrames = unfoldr mp3Seek
 
 main :: IO ()
 main = do
-    input <- B.readFile "./TastyWaves.mp3"
+    input <- B.readFile "./1-second-of-silence.mp3"
     let frame = parseAllFrames input
     print $ frame
