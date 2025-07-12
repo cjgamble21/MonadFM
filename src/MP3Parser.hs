@@ -16,6 +16,7 @@ data MP3DataStream = MP3DataStream {
     reservoir :: !B.ByteString -- Used for frame data lookback
 } deriving (Show)
 
+data BlockType = Forbidden | Start | ShortWindows | End deriving (Show, Eq)
 data ChannelMode = Stereo | JointStereo | DualChannel | SingleChannel deriving (Show, Eq)
 
 data MP3FrameHeader = MP3FrameHeader {
@@ -26,8 +27,26 @@ data MP3FrameHeader = MP3FrameHeader {
     padding :: Int
 } deriving (Show)
 
+data MP3GranuleSideData = MP3GranuleSideData {
+    mainDataLength :: Int, -- Includes scalefactors and Huffman data
+    bigValuesLength :: Int -- Length of big values region of Huffman data
+    globalGain :: Int -- Quantization step size
+    scalefactorLengthTableIndex :: Int -- Indexes into table for scalefactor length
+    windowSwitchingFlag :: Bool
+    blockType :: BlockType
+    mixedBlockFlag :: Bool
+    huffmanTableIndex :: Int -- Indexes into huffman code table for big values region
+    subBlockGain :: Int -- Only used when window switching flag is true and block type is ShortWindows
+    region0Count :: Int -- One less than number of scalefactor bands in region0
+    region1Count :: Int -- One less than number of scalefactor bands in region1
+    -- Preflag?
+    -- Scalfac_scale?
+    region1TableIndex :: Int
+}
+
 data MP3SideInfo = MP3SideInfo {
     dataOffset :: Int -- Offset for previous frame lookback
+    scsfi :: [Bool] -- Scale factor selection information array, size 4 for each group of subbands
 } deriving (Show)
 
 data MP3Frame = MP3Frame {
@@ -76,8 +95,8 @@ getMP3FrameHeader bs
         channelMode = getChannelMode . fromIntegral $ extractBits bs 6 2
         protectionOn = toBool . fromIntegral $  extractBits bs 16 1
 
-parseSideInfo :: B.ByteString -> MP3SideInfo
-parseSideInfo bs = 
+parseSideInfo :: B.ByteString -> ChannelMode -> MP3SideInfo
+parseSideInfo bs channel = 
     let word = runGet getWord8 bs
     in MP3SideInfo {
         dataOffset = fromIntegral $ extractBits word 0 8
@@ -107,7 +126,7 @@ mp3Seek (MP3DataStream bs reservoir)
 
                 sideInfoSize = fromIntegral $ calculateSideInfoSize header
                 sideInfoBytes = B.take sideInfoSize frameDataBytes
-                sideInfo = parseSideInfo sideInfoBytes
+                sideInfo = parseSideInfo sideInfoBytes (channelMode header)
                 
                 reservoirLength = B.length reservoir
                 mainDataOffset = reservoirLength - (fromIntegral $ dataOffset sideInfo)
